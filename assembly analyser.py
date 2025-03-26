@@ -2,7 +2,7 @@ from Assembler.assembler import Assembler
 
 def interactive_mode(start_address=None):
     asm = Assembler(start_address)
-    print("欢迎使用汇编模拟器！支持以下命令（含浮点指令如 movss、addss 等）：")
+    print("欢迎使用汇编模拟器：")
     print("- 输入汇编指令或标签直接添加（如 movss $3.14, %xmm0）")
     print("- '# reg add <name> [bit_width]': 添加自定义寄存器（如 # reg add myreg 32）")
     print("- 'load <filename>': 从文件加载汇编代码")
