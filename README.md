@@ -1,6 +1,4 @@
-  汇编模拟器 README body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f5f5f5; color: #333; } h1, h2, h3 { color: #2c3e50; } h1 { border-bottom: 2px solid #3498db; padding-bottom: 10px; } h2 { border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; } pre, code { background-color: #ecf0f1; padding: 10px; border-radius: 5px; overflow-x: auto; } pre { margin: 10px 0; } ul, ol { margin: 10px 0; padding-left: 20px; } li { margin: 5px 0; } a { color: #3498db; text-decoration: none; } a:hover { text-decoration: underline; } .note { background-color: #fef9e7; border-left: 4px solid #f1c40f; padding: 10px; margin: 10px 0; border-radius: 3px; }
-
-README
+汇编语言模拟器
 ============
 
 本项目是一个基于 Python 实现的 x86\_64 汇编语言模拟器，支持整数和浮点运算，旨在提供一个工具用于模拟和理解汇编指令的执行过程。该模拟器包括栈、寄存器、标志位管理和基本的汇编指令集，并提供交互模式，适用于汇编语言学习、代码调试以及简单程序的模拟运行。
