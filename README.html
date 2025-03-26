@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>汇编调试器文档</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #2c3e50;
+        }
+
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+
+        pre {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+        }
+
+        code {
+            background-color: #ecf0f1;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: Consolas, monospace;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        ul,
+        ol {
+            margin-left: 20px;
+        }
+
+        .highlight {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>汇编调试器文档</h1>
+
+    <div class="section">
+        <h2>1. 概述</h2>
+        <p>这是一个用 Python 编写的汇编调试器，旨在模拟 x86/x64
+            架构的汇编指令执行环境。它支持栈操作、寄存器管理、标志位更新以及多种汇编指令的执行。调试器提供了交互式模式，允许用户输入指令、设置断点、单步执行、回退以及查看系统状态。</p>
+        <p>代码主要由以下几个核心类组成：</p>
+        <ul>
+            <li><code>Stack</code>：模拟内存栈的管理。</li>
+            <li><code>Registers</code>：管理寄存器状态。</li>
+            <li><code>Flags</code>：处理标志位（如 ZF、SF、OF、CF）。</li>
+            <li><code>Assembler</code>：核心类，负责解析和执行汇编指令。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>2. 功能特性</h2>
+        <p>该调试器支持以下主要功能：</p>
+        <ul>
+            <li><span class="highlight">指令支持</span>：包括
+                <code>mov</code>、<code>push</code>、<code>pop</code>、<code>add</code>、<code>sub</code>、<code>cmp</code>、<code>jmp</code>
+                等常见汇编指令，以及位运算和移位指令（如 <code>and</code>、<code>shl</code>、<code>sar</code>）。
+            </li>
+            <li><span
+                    class="highlight">调试功能</span>：单步执行（<code>step</code>）、全速运行（<code>run</code>）、回退（<code>back</code>）、断点设置（<code>bp</code>
+                和条件断点）。</li>
+            <li><span class="highlight">状态跟踪</span>：支持查看栈、寄存器、标志位以及自定义变量的状态。</li>
+            <li><span class="highlight">交互模式</span>：通过命令行输入指令或从文件加载代码。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>3. 类结构详解</h2>
+
+        <h3>3.1 Stack 类</h3>
+        <p><code>Stack</code> 类用于模拟栈内存，提供基本的栈操作功能。</p>
+        <pre><code>class Stack:
+    def __init__(self, start_address=0x0FFFFFFF, min_address=0x1000):
+        self.memory = {}  # 地址到值的映射
+        self.rsp = start_address  # 栈顶指针
+        self.min_address = min_address  # 栈的最小地址</code></pre>
+        <ul>
+            <li><code>push(value, size=8)</code>：将值压入栈，更新栈顶指针 <code>rsp</code>。</li>
+            <li><code>pop(size=8)</code>：弹出栈顶值并返回。</li>
+            <li><code>get_value(address)</code> 和 <code>set_value(address, value)</code>：读写指定地址的内存。</li>
+            <li><code>display()</code>：显示栈的当前状态。</li>
+        </ul>
+
+        <h3>3.2 Registers 类</h3>
+        <p><code>Registers</code> 类管理 CPU 寄存器，支持多种寄存器大小（如 64 位、32 位、16 位）。</p>
+        <pre><code>class Registers:
+    def __init__(self, start_rsp=None):
+        self.registers = {}
+        self.register_map = {
+            "%rax": 64, "%rbx": 64, "%rcx": 64, "%rdx": 64,
+            "%eax": 32, "%ebx": 32, "%ecx": 32, "%edx": 32,
+            "%ax": 16, "%bx": 16, "%cx": 16, "%dx": 16,
+        }</code></pre>
+        <ul>
+            <li><code>set_register(reg, value, suffix)</code>：设置寄存器值，支持按后缀（如 <code>l</code>、<code>w</code>）截断。</li>
+            <li><code>get_register(reg)</code>：获取寄存器值，默认为 0。</li>
+            <li><code>display()</code>：显示所有已使用的寄存器状态。</li>
+        </ul>
+
+        <h3>3.3 Flags 类</h3>
+        <p><code>Flags</code> 类负责标志位的管理，根据操作结果更新。</p>
+        <pre><code>class Flags:
+    def __init__(self):
+        self.ZF = False  # 零标志
+        self.SF = False  # 符号标志
+        self.OF = False  # 溢出标志
+        self.CF = False  # 进位标志</code></pre>
+        <ul>
+            <li><code>update(result, op1, op2, operation)</code>：根据运算结果更新标志位，支持多种操作（如
+                <code>add</code>、<code>sub</code>、<code>mul</code>）。
+            </li>
+            <li><code>display()</code>：显示当前标志位状态。</li>
+        </ul>
+
+        <h3>3.4 Assembler 类</h3>
+        <p><code>Assembler</code> 是调试器的核心，负责指令解析和执行。</p>
+        <pre><code>class Assembler:
+    def __init__(self, start_address=0x0FFFFFFF):
+        self.stack = Stack(start_address)
+        self.registers = Registers(start_address)
+        self.flags = Flags()
+        self.pc = 0  # 程序计数器
+        self.instructions = []  # 指令列表</code></pre>
+        <ul>
+            <li><code>parse_instruction(instruction)</code>：解析指令，返回操作码、后缀和操作数。</li>
+            <li><code>execute()</code>：执行单条指令，根据操作码调用对应处理函数。</li>
+            <li><code>run()</code> 和 <code>step()</code>：分别实现全速运行和单步执行。</li>
+            <li><code>back()</code>：回退到上一个状态。</li>
+            <li><code>set_breakpoint(pc)</code> 和 <code>set_conditional_breakpoint(condition)</code>：设置普通和条件断点。</li>
+            <li><code>watch_variable(var)</code>：跟踪特定寄存器或内存地址。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>4. 支持的指令</h2>
+        <p>调试器支持以下汇编指令（部分示例）：</p>
+        <ul>
+            <li><code>mov src, dst</code>：将源操作数的值移动到目标。</li>
+            <li><code>push src</code> 和 <code>pop dst</code>：栈操作。</li>
+            <li><code>add src, dst</code> 和 <code>sub src, dst</code>：加法和减法运算。</li>
+            <li><code>jmp target</code>、<code>je target</code> 等：跳转指令。</li>
+            <li><code>lea src, dst</code>：加载有效地址。</li>
+            <li><code>shl src, dst</code>、<code>sar src, dst</code>：移位操作。</li>
+        </ul>
+        <p>指令支持后缀（如 <code>movq</code>、<code>movl</code>），表示操作数大小（64 位、32 位等）。</p>
+    </div>
+
+    <div class="section">
+        <h2>5. 使用方法</h2>
+        <p>运行代码后，进入交互模式，提示符为 <code>请输入指令></code>。以下是常用命令：</p>
+        <ul>
+            <li>直接输入汇编指令（如 <code>mov $0x10, %rax</code>）添加指令。</li>
+            <li><code>run</code>：运行整个程序。</li>
+            <li><code>step</code>：单步执行并显示状态。</li>
+            <li><code>back</code>：回退一步。</li>
+            <li><code>bp 2</code>：在第 2 条指令处设置断点。</li>
+            <li><code>cbp rax == 0x100</code>：设置条件断点，当 <code>%rax</code> 等于 <code>0x100</code> 时暂停。</li>
+            <li><code>watch %rax</code>：跟踪寄存器 <code>%rax</code> 的值。</li>
+            <li><code>load test.asm</code>：从文件加载汇编代码。</li>
+            <li><code>list</code>：显示当前指令列表。</li>
+            <li><code>exit</code>：退出调试器。</li>
+        </ul>
+        <p>示例程序（可保存为 <code>test.asm</code> 并用 <code>load</code> 加载）：</p>
+        <pre><code>mov $0x5, %rax
+add $0x3, %rax
+cmp $0x8, %rax
+je end
+mov $0x0, %rbx
+end:
+...
+        </code></pre>
+    </div>
+</body>
+
+</html>
