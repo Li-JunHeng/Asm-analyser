@@ -96,29 +96,44 @@ class Registers:
         if not self.registers and not self.float_registers and not self.custom_registers:
             print("寄存器未被使用")
             return
+        
         # 整数寄存器
         if self.registers:
-            print("整数寄存器状态：")
-            print(f"{'名称':<8} {'十六进制值':<16} {'十进制值':<16}")
-            for reg in sorted(self.registers.keys()):
-                if reg in self.register_map and not reg.startswith("%xmm"):
-                    value = self.registers[reg]
-                    print(f"{reg:<8} {hex(value):<16} {value:<16}")
+            int_regs = [(reg, self.registers[reg]) for reg in sorted(self.registers.keys())
+                        if reg in self.register_map and not reg.startswith("%xmm")]
+            if int_regs:
+                name_width = max(len(reg) for reg, _ in int_regs) + 2
+                hex_width = max(len(hex(val)) for _, val in int_regs) + 2
+                dec_width = max(len(str(val)) for _, val in int_regs) + 2
+                print("整数寄存器状态：")
+                print(f"{'名称':<{name_width}} {'十六进制值':<{hex_width}} {'十进制值':<{dec_width}}")
+                for reg, value in int_regs:
+                    print(f"{reg:<{name_width}} {hex(value):<{hex_width}} {value:<{dec_width}}")
+        
         # 浮点寄存器
         if self.float_registers:
-            print("\n浮点寄存器状态：")
-            print(f"{'名称':<8} {'值':<16}")
-            for reg in sorted(self.float_registers.keys()):
-                value = self.float_registers[reg]
-                print(f"{reg:<8} {value:<16}")
+            float_regs = [(reg, self.float_registers[reg]) for reg in sorted(self.float_registers.keys())]
+            if float_regs:
+                name_width = max(len(reg) for reg, _ in float_regs) + 2
+                val_width = max(len(str(val)) for _, val in float_regs) + 2
+                print("\n浮点寄存器状态：")
+                print(f"{'名称':<{name_width}} {'值':<{val_width}}")
+                for reg, value in float_regs:
+                    print(f"{reg:<{name_width}} {value:<{val_width}}")
+        
         # 自定义寄存器
-        if self.custom_registers:
-            print("\n自定义寄存器状态：")
-            print(f"{'名称':<8} {'值':<16}")
-            for reg in sorted(self.custom_registers.keys()):
-                if reg in self.float_registers:
-                    value = self.float_registers[reg]
-                    print(f"{reg:<8} {value:<16} (浮点)")
-                else:
-                    value = self.registers.get(reg, 0)
-                    print(f"{reg:<8} {hex(value):<16} {value:<16}")
+            if self.custom_registers:
+                custom_regs = [(reg, self.float_registers.get(reg) if reg in self.float_registers else self.registers.get(reg, 0),
+                            reg in self.float_registers) for reg in sorted(self.custom_registers.keys())]
+                if custom_regs:
+                    name_width = max(len(reg) for reg, _, _ in custom_regs) + 2
+                    # 计算值列最大宽度
+                    val_lengths = [len(str(val) if is_float else f"{hex(val)} ({val})") 
+                                for _, val, is_float in custom_regs]
+                    val_width = max(val_lengths) + 2
+                    print("\n自定义寄存器状态：")
+                    print(f"{'名称':<{name_width}} {'值':<{val_width}}")
+                    for reg, value, is_float in custom_regs:
+                        val_str = str(value) if is_float else f"{hex(value)} ({value})"
+                        suffix = " (浮点)" if is_float else ""
+                        print(f"{reg:<{name_width}} {val_str + suffix:<{val_width}}")

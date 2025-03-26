@@ -1,15 +1,21 @@
 from Stack.stack import Stack
 from Registers.registers import Registers
 from Flags.flags import Flags
+import os
 
 class Assembler:
-    def __init__(self, start_address=0x0FFFFFFF):
+    def __init__(self, start_address=0x0FFFFFFF, data_address=0x00FFFFFF):
         self.stack = Stack(start_address)
         self.registers = Registers(start_address)
         self.flags = Flags()  # 后续会替换为支持浮点的版本
         self.pc = 0
         self.instructions = []
         self.labels = {}
+        self.history = []
+        self.breakpoints = set()
+        self.symbols = {}
+        self.data_address = data_address
+        self.in_data_section = False
         self.handlers = {
             "mov": self.mov, "push": self.push, "pop": self.pop,
             "add": self.add, "sub": self.sub, "cmp": self.comp,
@@ -25,9 +31,9 @@ class Assembler:
             # 双精度浮点
             "movsd": self.movsd, "addsd": self.addsd, "subsd": self.subsd,
             "mulsd": self.mulsd, "divsd": self.divsd,
+            "cmove": self.cmove,"cmovne": self.cmovne,"cmovg": self.cmovg,"cmovl": self.cmovl,
+
         }
-        self.history = []
-        self.breakpoints = set()
 
     def parse_instruction(self, instruction):
         instruction = instruction.strip()
@@ -71,8 +77,14 @@ class Assembler:
 
     def parse_operand(self, operand, is_target=False):
         operand = operand.strip()
-        if operand.startswith("$"):
+        if operand in self.symbols and not is_target:
+            addr, _, val = self.symbols[operand]
+            return val
+        elif operand.startswith("$"):
             imm = operand[1:]
+            if imm in self.symbols:  # 新增：检查 $ 后面的是否是符号
+                addr, _, val = self.symbols[imm]
+                return val
             try:
                 return float(imm) if "." in imm else int(imm, 16) if imm.startswith("0x") else int(imm)
             except ValueError:
@@ -132,15 +144,35 @@ class Assembler:
         return address
 
     def add_instruction(self, instruction):
-        base_op, _, _ = self.parse_instruction(instruction)
-        if instruction.startswith("#reg "):
-            parts = instruction.split()
-            if len(parts) == 3:
-                reg_name, bit_width = parts[1], int(parts[2])
-                self.registers.add_custom_register(reg_name, bit_width)
-                print(f"从指令中定义寄存器: {reg_name} ({bit_width} 位)")
+        instruction = instruction.strip()
+        if instruction.startswith(".data"):
+            self.in_data_section = True
+            print("进入 .data 段")
             return
-        if base_op is not None or instruction.endswith(":"):  # 有效指令或标签
+        elif instruction.startswith(".text"):
+            self.in_data_section = False
+            print("进入 .text 段")
+            return
+        elif getattr(self, "in_data_section", False):  # 检查是否在 .data 段
+            parts = instruction.split(maxsplit=1)
+            if len(parts) >= 2:
+                name, value = parts[0].rstrip(":"), parts[1]
+                try:
+                    if value.startswith("0x"):
+                        val = int(value, 16)
+                    elif "." in value:
+                        val = float(value)
+                    else:
+                        val = int(value)
+                    self.symbols[name] = (self.data_address, "int" if isinstance(val, int) else "float", val)
+                    self.stack.set_value(self.data_address, val, is_float=isinstance(val, float))
+                    print(f"定义符号 {name} 在 {hex(self.data_address)} = {val}")
+                    self.data_address += 8  # 分配 8 字节
+                except ValueError:
+                    print(f"无法解析数据值: {value}")
+            return
+        base_op, _, _ = self.parse_instruction(instruction)
+        if base_op is not None or instruction.endswith(":"):
             self.instructions.append(instruction)
             if instruction.endswith(":"):
                 print(f"已添加标签: {instruction[:-1]} -> 指令索引 {len(self.instructions) - 1}")
@@ -463,6 +495,72 @@ class Assembler:
             raise ValueError(f"or 目标操作数无效: {dst}")
         self.pc += 1
 
+    def xor(self, suffix, operands):
+        if len(operands) != 2:
+            raise ValueError(f"xor 需要 2 个操作数，收到 {len(operands)} 个: {operands}")
+        src, dst = operands
+        src_value = self.parse_operand(src)
+        if dst.startswith("%"):
+            current = self.registers.get_register(dst)
+            result = current ^ src_value
+            self.registers.set_register(dst, result, suffix)
+            self.flags.update(result, current, src_value, "and")  # 跟 and 一样，CF 和 OF 清零
+        elif "(" in dst and ")" in dst:
+            address = self.parse_address(dst)
+            current = self.stack.get_value(address)
+            result = current ^ src_value
+            self.stack.set_value(address, result)
+            self.flags.update(result, current, src_value, "and")
+        else:
+            raise ValueError(f"xor 目标操作数无效: {dst}")
+        self.pc += 1
+
+    def cmove(self, suffix, operands):
+        if len(operands) != 2:
+            raise ValueError(f"cmove 需要 2 个操作数，收到 {len(operands)} 个: {operands}")
+        src, dst = operands
+        src_value = self.parse_operand(src)
+        if not dst.startswith("%"):
+            raise ValueError(f"cmove 目标必须是寄存器: {dst}")
+        if self.flags.ZF:  # 零标志为真时执行移动
+            self.registers.set_register(dst, src_value, suffix)
+        self.pc += 1
+
+    def cmovne(self, suffix, operands):
+        if len(operands) != 2:
+            raise ValueError(f"cmovne 需要 2 个操作数，收到 {len(operands)} 个: {operands}")
+        src, dst = operands
+        src_value = self.parse_operand(src)
+        if not dst.startswith("%"):
+            raise ValueError(f"cmovne 目标必须是寄存器: {dst}")
+        if not self.flags.ZF:  # 零标志为假时执行移动
+            self.registers.set_register(dst, src_value, suffix)
+        self.pc += 1
+    
+    def cmovg(self, suffix, operands):
+        if len(operands) != 2:
+            raise ValueError(f"cmovg 需要 2 个操作数，收到 {len(operands)} 个: {operands}")
+        src, dst = operands
+        src_value = self.parse_operand(src)
+        if not dst.startswith("%"):
+            raise ValueError(f"cmovg 目标必须是寄存器: {dst}")
+        # 大于条件：ZF=0 且 SF=OF
+        if not self.flagsascape(self.flags.ZF) and self.flags.SF == self.flags.OF:
+            self.registers.set_register(dst, src_value, suffix)
+        self.pc += 1
+
+    def cmovl(self, suffix, operands):
+        if len(operands) != 2:
+            raise ValueError(f"cmovl 需要 2 个操作数，收到 {len(operands)} 个: {operands}")
+        src, dst = operands
+        src_value = self.parse_operand(src)
+        if not dst.startswith("%"):
+            raise ValueError(f"cmovl 目标必须是寄存器: {dst}")
+        # 小于条件：SF != OF
+        if self.flags.SF != self.flags.OF:
+            self.registers.set_register(dst, src_value, suffix)
+        self.pc += 1
+
     def shl(self, suffix, operands):
         """SHL/SAL 指令：逻辑/算术左移"""
         if len(operands) != 2:
@@ -664,6 +762,38 @@ class Assembler:
             self.flags.OF = False
         else:
             raise ValueError(f"sar 目标操作数无效: {dst}")
+        self.pc += 1
+
+    def rol(self, suffix, operands):
+        if len(operands) != 2:
+            raise ValueError(f"rol 需要 2 个操作数，收到 {len(operands)} 个: {operands}")
+        src, dst = operands
+        shift_count = self.parse_operand(src) & 0x1F
+        if dst.startswith("%"):
+            current = self.registers.get_register(dst)
+            if shift_count == 0:
+                self.pc += 1
+                return
+            bit_width = self.registers.register_map[dst]
+            mask = (1 << bit_width) - 1
+            result = ((current << shift_count) | (current >> (bit_width - shift_count))) & mask
+            self.registers.set_register(dst, result, suffix)
+            self.flags.ZF = (result == 0)
+            self.flags.CF = (current >> (bit_width - shift_count)) & 1 if shift_count > 0 else 0
+            self.flags.OF = (self.flags.SF != self.flags.CF) if shift_count == 1 else False
+        elif "(" in dst and ")" in dst:
+            address = self.parse_address(dst)
+            current = self.stack.get_value(address)
+            if shift_count == 0:
+                self.pc += 1
+                return
+            result = ((current << shift_count) | (current >> (64 - shift_count))) & 0xFFFFFFFFFFFFFFFF
+            self.stack.set_value(address, result)
+            self.flags.ZF = (result == 0)
+            self.flags.CF = (current >> (64 - shift_count)) & 1 if shift_count > 0 else 0
+            self.flags.OF = (self.flags.SF != self.flags.CF) if shift_count == 1 else False
+        else:
+            raise ValueError(f"rol 目标操作数无效: {dst}")
         self.pc += 1
 
     # 单精度浮点指令（更新为支持浮点栈）
@@ -911,7 +1041,9 @@ class Assembler:
 
     # 单步执行
     def step(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
         self.save_state()
+        
         if self.execute():
             self.refresh()
             if self.pc in self.breakpoints or self.check_conditional_breakpoints():
@@ -935,6 +1067,7 @@ class Assembler:
 
     # 回退一步
     def back(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
         if self.restore_state():
             self.refresh()
             print(f"已回退到 PC={self.pc}")
@@ -1046,11 +1179,18 @@ class Assembler:
             frames.append(current_frame)
         
         for i, frame in enumerate(frames):
+            # 计算每列最大宽度
+            addr_width = max(len(hex(addr)) for addr, _, _ in frame) + 2  # 加点余量
+            type_width = max(len(type_) for _, _, type_ in frame) + 2
+            val_width = max(len(f"{hex(val) if type_ == '整数' else val} ({val})" if type_ == '整数' else str(val)) 
+                        for _, val, type_ in frame) + 2
+            
             print(f"\n栈帧 {i}（从高地址到低地址）：")
-            print(f"{'地址':<16} {'类型':<8} {'值':<16}")
+            print(f"{'地址':<{addr_width}} {'类型':<{type_width}} {'值':<{val_width}}")
             for addr, value, type_ in frame:
                 if type_ == "整数":
-                    print(f"{hex(addr):<16} {type_:<8} {hex(value):<16} ({value})")
+                    val_str = f"{hex(value)} ({value})"
+                    print(f"{hex(addr):<{addr_width}} {type_:<{type_width}} {val_str:<{val_width}}")
                 else:
-                    print(f"{hex(addr):<16} {type_:<8} {value:<16}")
+                    print(f"{hex(addr):<{addr_width}} {type_:<{type_width}} {value:<{val_width}}")
         print(f"当前 RSP: {hex(self.stack.rsp)}")
