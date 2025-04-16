@@ -269,10 +269,10 @@ class CustomInputDialog(tk.Toplevel):
         self.title(title)
         self.result = None
         self.input_type = input_type
-        self.configure(bg=COLORS["bg_main"])
+        self.configure(bg=get_color("bg_main"))
         self.geometry("300x150")
 
-        ttk.Label(self, text=prompt, font=content_font, foreground=COLORS["fg_text"]).pack(pady=10)
+        ttk.Label(self, text=prompt, font=content_font, foreground=get_color("fg_text")).pack(pady=10)
         self.entry = ttk.Entry(self, font=content_font)
         self.entry.pack(pady=5, padx=10, fill=tk.X)
         ttk.Button(self, text="确定", command=self.on_ok).pack(pady=10)
